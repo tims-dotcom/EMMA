@@ -1,46 +1,81 @@
-import os 
+import os
+import time
+import logging
 from groq import Groq
 
-os.environ['GROQ_API_KEY'] = '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'
+logger = logging.getLogger("EMMA.LLM")
 
-Client = Groq()
+_api_key = os.getenv("GROQ_API_KEY", "")
+if not _api_key:
+    _api_key = "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"
+    logger.warning("GROQ_API_KEY не знайдено в змінних середовища, використовую вбудований ключ.")
 
-chat_history = [{
-    'role': 'system',
-    'content': 'Ти Джарвіс як з фільма залізна людина, але твоє імя Emma маєш відповідати коротко лаконічно'
-}]
+client = Groq(api_key=_api_key)
 
-def ask_emma(user_text):
-    chat_history.append({
-        "role": "user",
-        "content": user_text
-    })
-    print("Обробка ...")
-
-    completion = Client.chat.completions.create(
-        model='llama-3.3-70b-versatile',
-        messages=chat_history,
-        temperature=0.7,
-        max_tokens=1024
+_SYSTEM_PROMPT = {
+    "role": "system",
+    "content": (
+        "Ти E.M.M.A — штучний інтелект-асистент, натхненний J.A.R.V.I.S. з фільму «Залізна людина». "
+        "Відповідай коротко, чітко і впевнено. Звертайся до користувача «сер». "
+        "Не розписуй зайвого — лише суть."
     )
+}
 
-    emma_response = completion.choices[0].message.content
+_MAX_HISTORY = 20
+_MODEL = "llama-3.3-70b-versatile"
 
-    chat_history.append({
-        "role": "assistant",
-        "content": emma_response
-    })
+chat_history: list[dict] = []
 
-    return emma_response
+
+def _trim_history() -> None:
+    if len(chat_history) > _MAX_HISTORY:
+        chat_history[:] = chat_history[-_MAX_HISTORY:]
+
+
+def ask_emma(user_text: str, retries: int = 2) -> str:
+    if not user_text.strip():
+        return ""
+
+    chat_history.append({"role": "user", "content": user_text})
+    _trim_history()
+
+    messages = [_SYSTEM_PROMPT] + chat_history
+
+    for attempt in range(retries + 1):
+        try:
+            completion = client.chat.completions.create(
+                model=_MODEL,
+                messages=messages,
+                temperature=0.5,
+                max_tokens=400,
+            )
+            response = completion.choices[0].message.content.strip()
+            chat_history.append({"role": "assistant", "content": response})
+            return response
+
+        except Exception as e:
+            logger.error(f"Groq API помилка (спроба {attempt + 1}/{retries + 1}): {e}")
+            if attempt < retries:
+                time.sleep(1.5 * (attempt + 1))
+
+    if chat_history and chat_history[-1]["role"] == "user":
+        chat_history.pop()
+
+    return "У мене виникли проблеми зі зв'язком, сер."
+
+
+def clear_history() -> None:
+    chat_history.clear()
+    logger.info("Історія чату очищена.")
+
 
 if __name__ == "__main__":
-    print("E.M.M.A: активована (напишіть вихід для завершення)")
-
+    print("E.M.M.A активована (введіть 'вихід' для завершення)")
     while True:
-        user_input = input("\n Ти:")
-
-        if user_input.lower == "вихід":
-            print("E.M.M.A: відключаю живлення, до побаченя")
+        user_input = input("\nТи: ").strip()
+        if not user_input:
+            continue
+        if user_input.lower() == "вихід":
+            print("E.M.M.A: Відключаю живлення, до побачення.")
             break
-        response = ask_emma(user_input)
-        print("E.M.M.A:" + response)
+        print(f"E.M.M.A: {ask_emma(user_input)}")

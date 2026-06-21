@@ -1,62 +1,103 @@
+import logging
 import speech_recognition as sr
 import LLM
 import TTS
 import Action
 
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s [%(name)s] %(levelname)s: %(message)s",
+    datefmt="%H:%M:%S",
+)
+logger = logging.getLogger("EMMA.Main")
 
-def listen_to_user():
-    recognizer = sr.Recognizer()
 
-    with sr.Microphone() as source:
-        recognizer.adjust_for_ambient_noise(source, duration=0.5)
-        print("Слухаю вас, сер")
+def _handle_youtube(text: str) -> str:
+    return Action.search_youtube(text)
 
+
+def _handle_google(text: str) -> str:
+    for kw in ("загугли", "знайди в гуглі", "пошукай в гуглі"):
+        if kw in text:
+            query = text.replace(kw, "").strip()
+            return Action.open_google(query)
+    return Action.open_browser()
+
+
+COMMAND_TABLE: list[tuple[tuple[str, ...], callable]] = [
+    (("на ютубі", "в ютубі", "ютуб"), _handle_youtube),
+    (("загугли", "знайди в гуглі", "пошукай в гуглі"), _handle_google),
+    (("відкрий браузер", "відкрий гугл", "гугл"), lambda _: Action.open_browser()),
+    (("збільши звук", "збільши гучність", "гучніше"), lambda _: Action.volume_up()),
+    (("зменши звук", "зменши гучність", "тихіше"), lambda _: Action.volume_down()),
+    (("вимкни звук", "режим тиші", "без звуку"), lambda _: Action.volume_mute()),
+    (("скасуй вимкнення", "скасуй завершення"), lambda _: Action.cancel_shutdown()),
+    (("вимкни комп", "заверши роботу", "вимкни систему"), lambda _: Action.shutdown()),
+    (("перезавантаж", "перезапусти"), lambda _: Action.restart()),
+    (("очисти пам'ять", "скинь контекст", "нова розмова"),
+        lambda _: (LLM.clear_history(), "Контекст розмови очищено, сер.")[1]),
+]
+
+
+def _route(text: str) -> str | None:
+    for keywords, handler in COMMAND_TABLE:
+        if any(kw in text for kw in keywords):
+            return handler(text)
+    return None
+
+
+def listen(recognizer: sr.Recognizer, microphone: sr.Microphone) -> str | None:
+    with microphone as source:
+        recognizer.pause_threshold = 0.6
+        print("\n🎤 Слухаю...")
         try:
-            audio = recognizer.listen(source, timeout=5, phrase_time_limit=8)
+            audio = recognizer.listen(source, timeout=5, phrase_time_limit=10)
             text = recognizer.recognize_google(audio, language="uk-UA")
-            return text
-        except:
+            print(f"👤 Ви: {text}")
+            return text.lower().strip()
+        except sr.WaitTimeoutError:
             return None
-        
-def main():
-    TTS.speek("Всі системи активні, я готова до роботи")
+        except sr.UnknownValueError:
+            return None
+        except sr.RequestError as e:
+            logger.error(f"Google STT недоступний: {e}")
+            return None
+
+
+def main() -> None:
+    recognizer = sr.Recognizer()
+    microphone = sr.Microphone()
+
+    print("⏳ Налаштування мікрофона...")
+    with microphone as source:
+        recognizer.adjust_for_ambient_noise(source, duration=1.0)
+
+    TTS.speak("Всі системи активні, я готова до роботи, сер.")
 
     while True:
-        speech_text = listen_to_user()
+        text = listen(recognizer, microphone)
 
-        text_lower = speech_text.lower()
-
-        if speech_text is None:
+        if not text:
             continue
 
-        if "відключись" in text_lower or "вихід" in text_lower:
-            TTS.speek("Перехожу в режим сну, до зустрічі")
+        if any(kw in text for kw in ("відключись", "вихід", "стоп emma", "стоп емма")):
+            TTS.speak("Переходжу в режим сну. До зустрічі, сер.")
             break
-        elif "відкрий браузер" in text_lower or "відкрий google" in text_lower or "відкрий гугл" in text_lower:
-            response = Action.open_browser()
-            TTS.speek(response)
-            continue
-        elif "вимкни компа" in text_lower or "заверши роботу" in text_lower:
-            response = Action.shutdown()
-            TTS.speek(response)
-        elif "скасуй вимкнення" in text_lower or "скасуй завершення" in text_lower or "скасуй завершення роботи" in text_lower:
-            response = Action.cancel_shutdown()
-            TTS.speek(response)
-        elif "зменши звук" in text_lower or "зменши гучність" in text_lower:
-            response = Action.volume_down
-            TTS.speek(response)
-        elif "збільши звук" in text_lower or "збільши гучність" in text_lower:
-            response = Action.volume_up
-            TTS.speek(response)
-        elif "вимкни звук" in text_lower or "вимкни гучність" in text_lower:
-            response = Action.volume_mute
-            TTS.speek(response)
-        elif "на ютубі" in text_lower or "в ютубі" in text_lower:
-            response = Action.search_youtube
-            TTS.speek(response)
+
+        response = _route(text)
+
+        if response is not None:
+            TTS.speak(response)
+            if any(kw in text for kw in ("вимкни комп", "заверши роботу", "вимкни систему")):
+                break
         else:
-            reply = LLM.ask_emma(speech_text)
-            TTS.speek(reply)
+            try:
+                reply = LLM.ask_emma(text)
+                TTS.speak(reply)
+            except Exception as e:
+                logger.error(f"LLM помилка: {e}")
+                TTS.speak("Сталася помилка зв'язку з модулем ШІ, сер.")
+
 
 if __name__ == "__main__":
     main()
