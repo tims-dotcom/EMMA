@@ -19,27 +19,44 @@ def listen_to_user():
             return None
         
 def main():
-    TTS.speek("Всі системі активовані, сер, я готовий до роботи")
+    TTS.speek("Всі системи активні, я готова до роботи")
 
     while True:
         speech_text = listen_to_user()
 
+        text_lower = speech_text.lower()
+
         if speech_text is None:
             continue
 
-        if 'відключись' in speech_text.lower():
+        if "відключись" in text_lower or "вихід" in text_lower:
+            TTS.speek("Перехожу в режим сну, до зустрічі")
             break
-
-        if speech_text is not None:
-            text_lower = speech_text.lower()
-
-            if "відкрий гугл" in text_lower or "відкрий google":
-                response = Action.open_browser()
-                TTS.speek(response)
-                continue
-        
-        reply = LLM.ask_emma(speech_text)
-        TTS.speek(reply)
+        elif "відкрий браузер" in text_lower or "відкрий google" in text_lower or "відкрий гугл" in text_lower:
+            response = Action.open_browser()
+            TTS.speek(response)
+            continue
+        elif "вимкни компа" in text_lower or "заверши роботу" in text_lower:
+            response = Action.shutdown()
+            TTS.speek(response)
+        elif "скасуй вимкнення" in text_lower or "скасуй завершення" in text_lower or "скасуй завершення роботи" in text_lower:
+            response = Action.cancel_shutdown()
+            TTS.speek(response)
+        elif "зменши звук" in text_lower or "зменши гучність" in text_lower:
+            response = Action.volume_down
+            TTS.speek(response)
+        elif "збільши звук" in text_lower or "збільши гучність" in text_lower:
+            response = Action.volume_up
+            TTS.speek(response)
+        elif "вимкни звук" in text_lower or "вимкни гучність" in text_lower:
+            response = Action.volume_mute
+            TTS.speek(response)
+        elif "на ютубі" in text_lower or "в ютубі" in text_lower:
+            response = Action.search_youtube
+            TTS.speek(response)
+        else:
+            reply = LLM.ask_emma(speech_text)
+            TTS.speek(reply)
 
 if __name__ == "__main__":
     main()
