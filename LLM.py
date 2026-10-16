@@ -7,7 +7,7 @@ logger = logging.getLogger("EMMA.LLM")
 
 _api_key = os.getenv("GROQ_API_KEY", "")
 if not _api_key:
-    _api_key = "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"
+    _api_key = ""
     logger.warning("GROQ_API_KEY не знайдено в змінних середовища, використовую вбудований ключ.")
 
 client = Groq(api_key=_api_key)
